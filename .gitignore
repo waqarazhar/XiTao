@@ -24,3 +24,4 @@ benchmarks/kmeans/kmeans_omp
 benchmarks/kmeans/kmeans_xitao
 benchmarks/kmeans/kmeans_xitao_1
 benchmarks/kmeans/kmeans
+benchmarks/kmeans/data/kmeans/kdd_cup
