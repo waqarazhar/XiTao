@@ -166,14 +166,14 @@ main(int argc, char *argv[])
   auto end1_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(end);
   auto epoch1_end = end1_ms.time_since_epoch();
   std::chrono::duration<double> elapsed_seconds = end-start;
-
+/*
 #if defined(CRIT_PERF_SCHED)  
   xitao_ptt::print_table<Synth_MatMul>("MatMul");
   xitao_ptt::print_table<Synth_MatCopy>("MaCopy");
   xitao_ptt::print_table<Synth_MatStencil>("MatStencil");
 #endif
-
-  std::cout << total_taos + 1 <<" Tasks completed in "<< elapsed_seconds.count() << "s\n";
+*/
+  std::cout << "Parallelism = " << parallelism << ", " << total_taos + 1 <<" Tasks completed in "<< elapsed_seconds.count() << "s\n";
   std::cout << "Assembly Throughput: " << (total_taos) / elapsed_seconds.count() << " A/sec\n"; 
   std::cout << "Total number of steals: " <<  tao_total_steals << "\n";
 }

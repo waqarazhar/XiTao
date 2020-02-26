@@ -21,7 +21,7 @@
 include ../../makefile.sched
 
 CXXFLAGS += -I../../include 
-CXXFLAGS += -O2
+CXXFLAGS += -O0
 CXXFLAGS += --std=c++11  ${EXTRAEINC}
 
 CXXFLAGS += -DDOUBLE

@@ -419,7 +419,8 @@ int worker_loop(int nthread)
           assembly->set_timetable(nthread,ticks,width_index);
         }
         else {
-          assembly->set_timetable(nthread,((4*oldticks+ticks)/5),width_index);         
+          assembly->set_timetable(nthread,((4*oldticks+1*ticks)/5),width_index);
+          //assembly->set_timetable(nthread,ticks,width_index);         
         }
     }
 #endif
@@ -444,14 +445,16 @@ int worker_loop(int nthread)
       st = worker_ready_q[nthread].front(); 
       worker_ready_q[nthread].pop_front();
       LOCK_RELEASE(worker_lock[nthread]);
+/*
 #if defined(CRIT_PERF_SCHED)
       st->history_mold(nthread, st);
 #endif      
 #ifdef DEBUG
       LOCK_ACQUIRE(output_lck);
-      std::cout <<"[DEBUG] Priority=0, task "<< st->taskid <<" will run on thread "<< st->leader << ", width become " << st->width << std::endl;
+      std::cout <<"[BOBO] Task "<< st->taskid <<" will run on thread "<< st->leader << ", width become " << st->width << std::endl;
       LOCK_RELEASE(output_lck);
-#endif
+#endif 
+*/
       continue;
     }     
     LOCK_RELEASE(worker_lock[nthread]);        
@@ -470,14 +473,21 @@ int worker_loop(int nthread)
           st = worker_ready_q[random_core].back(); 
           worker_ready_q[random_core].pop_back();
           tao_total_steals++;  
-    #ifdef DEBUG
+#ifdef DEBUG
           LOCK_ACQUIRE(output_lck);
-          std::cout << "[DEBUG] Thread " << nthread << " steal a task from " << random_core << " successfully. \n";
+          std::cout << "[DEBUG] Thread " << nthread << " steal task " << st->taskid << " from " << random_core << " successfully. \n";
           LOCK_RELEASE(output_lck);          
-    #endif     
+#endif 
+    
 #if defined(CRIT_PERF_SCHED)          
-          st->history_mold(nthread, st);     
-#endif          
+          st->history_mold(nthread, st); 
+          //st->leader = nthread;
+#ifdef DEBUG
+          LOCK_ACQUIRE(output_lck);
+          std::cout <<"[Chen] After stealing, task "<< st->taskid <<" will run on thread "<< st->leader << ", width become " << st->width << std::endl;
+          LOCK_RELEASE(output_lck);
+#endif    
+#endif 
         }
         LOCK_RELEASE(worker_lock[random_core]);  
       }while(!st && (attempts-- > 0));
@@ -497,11 +507,10 @@ int worker_loop(int nthread)
       "Pending tasks = " << PolyTask::pending_tasks << "\n";
       LOCK_RELEASE(output_lck);
 #endif
-
       task_completions[nthread].tasks = 0;
     }
     LOCK_ACQUIRE(worker_lock[nthread]);
-   // Next remove any virtual tasks from the per-thread task pool
+    // Next remove any virtual tasks from the per-thread task pool
     if(task_pool[nthread].tasks > 0){
       PolyTask::pending_tasks -= task_pool[nthread].tasks;
 #ifdef DEBUG

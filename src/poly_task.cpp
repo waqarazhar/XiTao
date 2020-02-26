@@ -71,12 +71,12 @@ int PolyTask::clone_sta(PolyTask *pt) {
 void PolyTask::make_edge(PolyTask *t){
   out.push_back(t);
   t->refcount++;
-#ifdef CRIT_PERF_SCHED    
+//#ifdef CRIT_PERF_SCHED    
   t->_ptt = xitao_ptt::try_insert_table(t, t->workload_hint);               /*be sure that the dependent task has a PTT*/  
-#endif    
+//#endif    
 }
 
-#if defined(CRIT_PERF_SCHED)
+
 void PolyTask::history_mold(int _nthread, PolyTask *it){
   int new_width = 1; 
   int new_leader = -1;
@@ -111,6 +111,20 @@ void PolyTask::history_mold(int _nthread, PolyTask *it){
     it->width  = new_width;
   }
 } 
+
+// get value at specific location (leader, width) in ptt
+float PolyTask::get_timetable(int thread, int index) {
+  // return the ptt measurement at location
+  return (*_ptt)[index * XITAO_MAXTHREADS + thread];
+}
+
+// set value at specific location (leader, width) in ptt
+void PolyTask::set_timetable(int thread, float t, int index) {
+  // set the ptt measurement at location
+  (*_ptt)[index * XITAO_MAXTHREADS + thread] = t;  
+}
+
+#if defined(CRIT_PERF_SCHED)
   //Recursive function assigning criticality
 int PolyTask::set_criticality(){
   if((criticality)==0){
@@ -142,17 +156,7 @@ int PolyTask::if_prio(int _nthread, PolyTask * it){
   return it->criticality;
 } 
 
-// get value at specific location (leader, width) in ptt
-float PolyTask::get_timetable(int thread, int index) {
-  // return the ptt measurement at location
-  return (*_ptt)[index * XITAO_MAXTHREADS + thread];
-}
 
-// set value at specific location (leader, width) in ptt
-void PolyTask::set_timetable(int thread, float t, int index) {
-  // set the ptt measurement at location
-  (*_ptt)[index * XITAO_MAXTHREADS + thread] = t;  
-}
 
 void PolyTask::print_ptt(float table[][XITAO_MAXTHREADS], const char* table_name) { 
   std::cout << std::endl << table_name <<  " PTT Stats: " << std::endl;
@@ -211,6 +215,7 @@ int PolyTask::globalsearch_PTT(int nthread, PolyTask * it){
         leader = ptt_layout.size(); 
         break;
       }
+      //comp_perf = ptt_val;
       comp_perf = width * ptt_val;
       if (comp_perf < shortest_exec) {
         shortest_exec = comp_perf;
@@ -223,6 +228,28 @@ int PolyTask::globalsearch_PTT(int nthread, PolyTask * it){
   it->leader = new_leader;
   return new_leader;
 }
+
+int PolyTask::find_thread(int nthread, PolyTask * it){
+  int new_leader = -1;
+  float comp_perf = 0.0f; 
+  float shortest_exec = 1000.0f;
+  for(int leader = 0; leader < gotao_nthreads; ++leader) {
+    if(it->width <= 0) continue;
+    auto&& ptt_val = it->get_timetable(leader, it->width - 1);
+    if(ptt_val == 0.0f) {
+      new_leader = leader; 
+      //leader = ptt_layout.size(); 
+      break;
+    }
+    comp_perf = it->width * ptt_val;
+    if (comp_perf < shortest_exec) {
+      shortest_exec = comp_perf;
+      new_leader = leader;      
+    } 
+  }
+  it->leader = new_leader;
+  return new_leader;
+} 
 #endif
   
 #ifdef WEIGHT_SCHED
@@ -278,7 +305,6 @@ int PolyTask::weight_sched(int nthread, PolyTask * it){
 } 
 #endif
 
-
 PolyTask * PolyTask::commit_and_wakeup(int _nthread){
   PolyTask *ret = nullptr;
   for(std::list<PolyTask *>::iterator it = out.begin(); it != out.end(); ++it){
@@ -289,13 +315,13 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
       std::cout << "[DEBUG] Task " << (*it)->taskid << " became ready" << std::endl;
       LOCK_RELEASE(output_lck);
 #endif 
-        
-#if defined(CRIT_PERF_SCHED) || defined(WEIGHT_SCHED)
 
+#if defined(CRIT_PERF_SCHED) || defined(WEIGHT_SCHED)
 #if defined(CRIT_PERF_SCHED)
       int pr = if_prio(_nthread, (*it));
       if (pr == 1){
         globalsearch_PTT(_nthread, (*it));
+        //find_thread(_nthread, (*it));
 #ifdef DEBUG
         LOCK_ACQUIRE(output_lck);
         std::cout <<"[DEBUG] Priority=1, task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
@@ -309,10 +335,12 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
           LOCK_RELEASE(worker_assembly_lock[i]);
         }        
       }
-      else{        
+      else{    
+        history_mold(_nthread,(*it));
+        //(*it)->leader = _nthread;
 #ifdef DEBUG
         LOCK_ACQUIRE(output_lck);
-        std::cout <<"[DEBUG] Priority=0, task "<< (*it)->taskid <<" is pushed to WSQ of thread "<< _nthread << std::endl;
+        std::cout <<"[DEBUG] Priority=0, task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
         LOCK_RELEASE(output_lck);
 #endif
         LOCK_ACQUIRE(worker_lock[_nthread]);
@@ -328,8 +356,13 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
                 
 #else
       if(!ret && (((*it)->affinity_queue == -1) || (((*it)->affinity_queue/(*it)->width) == (_nthread/(*it)->width)))){
-        // history_mold(_nthread,(*it)); 
+        //history_mold(_nthread,(*it));
         ret = *it; // forward locally only if affinity matches
+#ifdef DEBUG
+        LOCK_ACQUIRE(output_lck);
+        std::cout <<"[DEBUG] Task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
+        LOCK_RELEASE(output_lck);
+#endif
       }
       else{
         // otherwise insert into affinity queue, or in local queue

@@ -25,17 +25,18 @@ public:
   static std::atomic<int> prev_top_task;     
   //int criticality;
   int marker;
-  // A pointer to the corresponding ptt table
-  xitao::ptt_shared_type _ptt;  
+#endif
   // An integer descriptor to distinguish the workload of several TAOs of the same type
   // it is mainly used by the scheduler when picking up the correct PTT
   size_t workload_hint;
-#endif
+  // A pointer to the corresponding ptt table
+  xitao::ptt_shared_type _ptt;  
+  
   int type;
   // The leader task id in the resource partition
   int leader;
   int criticality;
-  #if defined(DEBUG)
+#if defined(DEBUG)
   int taskid;
   static std::atomic<int> created_tasks;
 #endif
@@ -51,8 +52,11 @@ public:
   std::atomic<int> threads_out_tao;
   int width; /*!< number of resources that this assembly uses */  
 
+  //History-based molding
+  void history_mold(int _nthread, PolyTask *it);
+
   //Virtual declaration of performance table get/set within tasks
-#if defined(CRIT_PERF_SCHED)
+
   //! Virtual function that is called by the performance based scheduler to get an entry in PTT
   /*!
     \param threadid logical thread id that executes the TAO
@@ -66,14 +70,15 @@ public:
     \param index the index of the width type 
     */  
   virtual void set_timetable(int thread, float ticks, int index);
-  //History-based molding
-  void history_mold(int _nthread, PolyTask *it);
+
+#if defined(CRIT_PERF_SCHED) 
   //Recursive function assigning criticality
   int set_criticality();
   int set_marker(int i);
   //Determine if task is critical task
   int if_prio(int _nthread, PolyTask * it);
   int globalsearch_PTT(int nthread, PolyTask * it);
+  int find_thread(int nthread, PolyTask * it);
   static void print_ptt(float table[][XITAO_MAXTHREADS], const char* table_name);
   //Find suitable thread for prio task
   //int find_thread(int nthread, PolyTask * it);

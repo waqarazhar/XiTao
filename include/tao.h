@@ -31,7 +31,7 @@ typedef void (*task)(void *, int);
 class AssemblyTask: public PolyTask{
 public:
   AssemblyTask(int w, int nthread=0) : PolyTask(TASK_ASSEMBLY, nthread) {
-    leader = -1;
+    leader = 5;
     width = w;
 #ifdef NEED_BARRIER
     barrier = new BARRIER(w);
