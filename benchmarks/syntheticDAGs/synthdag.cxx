@@ -27,7 +27,7 @@ main(int argc, char *argv[])
     return 0;
   }
 	
-	const int arr_size = 1 << 28;
+	const int arr_size = 1 << 26;
   real_t *A = new real_t[arr_size];
   real_t *B = new real_t[arr_size];
   real_t *C = new real_t[arr_size];
@@ -46,7 +46,7 @@ main(int argc, char *argv[])
   int parallelism = atoi(argv[6]);
   int total_taos = tao_mul + tao_copy + tao_stencil;
   int nthreads = XITAO_MAXTHREADS;
-   //DOT graph output
+  //DOT graph output
   std::ofstream graphfile;
   graphfile.open ("graph.txt");
   graphfile << "digraph DAG{\n";
@@ -66,18 +66,21 @@ main(int argc, char *argv[])
     tao_mul--;
 		indx++;
 		if((indx + 1) * len * len > arr_size) indx = 0;
+    current_type = 0;
   } else if(tao_copy > 0){
     //previous_tao = new Synth_MatCopy(len, resource_width);
 		previous_tao = new Synth_MatCopy(len, resource_width,  A + indx * len * len, B + indx * len * len);
     tao_copy--;
 		indx++;
 		if((indx + 1) * len * len > arr_size) indx = 0;
+    current_type = 1;
   } else if(tao_stencil > 0) {
     //previous_tao = new Synth_MatStencil(len, resource_width);
 		previous_tao = new Synth_MatStencil(len, resource_width, A + indx * len * len, B + indx * len * len);
     tao_stencil--;
 		indx++;
     if((indx + 1) * len * len > arr_size) indx = 0;
+    current_type = 2;
   }
   startTAO = previous_tao;
   previous_tao->criticality = 1;
@@ -141,7 +144,7 @@ main(int argc, char *argv[])
         new_previous_tao->criticality = 1;
         new_previous_id = current_tao_id;
       }
-      current_type++;
+      //current_type++;
       if(current_type >= tao_types) current_type = 0;
     }
     previous_tao = new_previous_tao;
@@ -151,7 +154,7 @@ main(int argc, char *argv[])
   graphfile << "}";
   graphfile.close();
 
-  gotao_push(startTAO, 0);
+  gotao_push(startTAO, 5);
   std::chrono::time_point<std::chrono::system_clock> start, end;
   start = std::chrono::system_clock::now();
   auto start1_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(start);
@@ -176,4 +179,5 @@ main(int argc, char *argv[])
   std::cout << "Parallelism = " << parallelism << ", " << total_taos + 1 <<" Tasks completed in "<< elapsed_seconds.count() << "s\n";
   std::cout << "Assembly Throughput: " << (total_taos) / elapsed_seconds.count() << " A/sec\n"; 
   std::cout << "Total number of steals: " <<  tao_total_steals << "\n";
+  std::cout << "\n";
 }

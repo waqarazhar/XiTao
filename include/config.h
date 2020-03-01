@@ -1,8 +1,8 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
-
 //#define DEBUG
-
+//#define NUMTASKS
+//#define EXECTIME 
 #define GOTAO_THREAD_BASE 0
 #define GOTAO_NO_AFFINITY (1.0)
 #define STEAL_ATTEMPTS 1
