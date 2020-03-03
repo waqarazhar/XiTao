@@ -11,6 +11,10 @@
 #include "xitao_workspace.h"
 using namespace xitao;
 
+#ifdef NUMTASKS
+std::vector<int> num_task(XITAO_MAXTHREADS * XITAO_MAXTHREADS, 0);
+#endif
+
 int worker_loop(int nthread);
 
 //! Allocates/deallocates the XiTAO's runtime resources. The size of the vector is equal to the number of available CPU cores. 
@@ -341,6 +345,10 @@ int worker_loop(int nthread)
     std::cout << "Thread " << nthread << " is deactivated since it is not included in any PTT partition" << std::endl;      
     return 0;
   }
+  #if defined(EXECTIME)
+  std::chrono::time_point<std::chrono::system_clock> start_exe, end_exe;
+  std::chrono::duration<double> elapsed_exe;
+  #endif
   while(true)
   {    
     int random_core = 0;
@@ -365,7 +373,7 @@ int worker_loop(int nthread)
       }
       else if(st->type == TASK_ASSEMBLY){
         AssemblyTask *assembly = (AssemblyTask *) st;
-#ifndef CRIT_PERF_SCHED 
+#ifdef DBASIC_SCHED 
         assembly->leader = nthread / assembly->width * assembly->width; // homogenous calculation of leader core
 #endif        
 #ifdef DEBUG
@@ -376,6 +384,11 @@ int worker_loop(int nthread)
         for(int i = assembly->leader; i < assembly->leader + assembly->width; i++){
           LOCK_ACQUIRE(worker_assembly_lock[i]);
           worker_assembly_q[i].push_back(st);
+#ifdef NUMTASKS
+          if(assembly->criticality == 1){ 
+            num_task[ assembly->width * gotao_nthreads + i]++;
+          }
+#endif
         }
         for(int i = assembly->leader; i < assembly->leader + assembly->width; i++){
           LOCK_RELEASE(worker_assembly_lock[i]);
@@ -406,7 +419,15 @@ int worker_loop(int nthread)
       std::cout << "[DEBUG] Thread "<< nthread << " starts executing task " << assembly->taskid << "......\n";
       LOCK_RELEASE(output_lck);
 #endif
+
+#ifdef EXECTIME
+      start_exe = std::chrono::system_clock::now();
+#endif
       assembly->execute(nthread);
+#ifdef EXECTIME
+      end_exe = std::chrono::system_clock::now();
+      elapsed_exe += end_exe - start_exe;
+#endif
 
 #if defined(CRIT_PERF_SCHED)
       if(assembly->leader == nthread){
@@ -420,8 +441,7 @@ int worker_loop(int nthread)
           assembly->set_timetable(nthread,ticks,width_index);
         }
         else {
-          assembly->set_timetable(nthread,((4*oldticks+1*ticks)/5),width_index);
-          //assembly->set_timetable(nthread,ticks,width_index);         
+          assembly->set_timetable(nthread,((4*oldticks+1*ticks)/5),width_index);   
         }
     }
 #endif
@@ -479,10 +499,10 @@ int worker_loop(int nthread)
           std::cout << "[DEBUG] Thread " << nthread << " steal task " << st->taskid << " from " << random_core << " successfully. \n";
           LOCK_RELEASE(output_lck);          
 #endif 
-    
-#if defined(CRIT_PERF_SCHED)          
-          st->history_mold(nthread, st); 
           //st->leader = nthread;
+#if defined(CRIT_PERF_SCHED)          
+          //st->history_mold(nthread, st); 
+          st->leader = nthread;
 #ifdef DEBUG
           LOCK_ACQUIRE(output_lck);
           std::cout <<"[Chen] After stealing, task "<< st->taskid <<" will run on thread "<< st->leader << ", width become " << st->width << std::endl;
@@ -528,5 +548,17 @@ int worker_loop(int nthread)
       break;
     }
   }
+#ifdef EXECTIME
+  LOCK_ACQUIRE(output_lck);
+  std::cout << "The total execution time of thread " << nthread << " is " << elapsed_exe.count() << " s.\n";
+  LOCK_RELEASE(output_lck);
+#endif
+#ifdef NUMTASKS
+  LOCK_ACQUIRE(output_lck);
+	for(int a = 1; a < gotao_nthreads; a = a*2){
+		std::cout << "Thread " << nthread << " with width " << a << " completes " << num_task[a * gotao_nthreads + nthread] << " tasks.\n";
+	}
+	LOCK_RELEASE(output_lck);
+#endif
   return 0;
 }

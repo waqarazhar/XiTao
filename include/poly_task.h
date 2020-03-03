@@ -24,8 +24,9 @@ public:
   //Static atomic of current most critical task for criticality-based scheduling
   static std::atomic<int> prev_top_task;     
   //int criticality;
-  int marker;
+  
 #endif
+  int marker;
   // An integer descriptor to distinguish the workload of several TAOs of the same type
   // it is mainly used by the scheduler when picking up the correct PTT
   size_t workload_hint;
@@ -71,10 +72,10 @@ public:
     */  
   virtual void set_timetable(int thread, float ticks, int index);
 
-#if defined(CRIT_PERF_SCHED) 
   //Recursive function assigning criticality
   int set_criticality();
   int set_marker(int i);
+#if defined(CRIT_PERF_SCHED) 
   //Determine if task is critical task
   int if_prio(int _nthread, PolyTask * it);
   int globalsearch_PTT(int nthread, PolyTask * it);

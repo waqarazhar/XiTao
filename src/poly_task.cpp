@@ -9,6 +9,10 @@
 #include "xitao_workspace.h"
 using namespace xitao;
 
+#ifdef NUMTASKS
+extern std::vector<int> num_task;
+#endif
+
 //The pending PolyTasks count 
 std::atomic<int> PolyTask::pending_tasks;
 
@@ -76,8 +80,8 @@ void PolyTask::make_edge(PolyTask *t){
 //#endif    
 }
 
-
 void PolyTask::history_mold(int _nthread, PolyTask *it){
+  //std::cout << "[YOU ARE FAT!]" << std::endl;
   int new_width = 1; 
   int new_leader = -1;
   float shortest_exec = 1000.0f;
@@ -124,7 +128,7 @@ void PolyTask::set_timetable(int thread, float t, int index) {
   (*_ptt)[index * XITAO_MAXTHREADS + thread] = t;  
 }
 
-#if defined(CRIT_PERF_SCHED)
+
   //Recursive function assigning criticality
 int PolyTask::set_criticality(){
   if((criticality)==0){
@@ -150,7 +154,7 @@ int PolyTask::set_marker(int i){
   return marker;
 }
 
-
+#if defined(CRIT_PERF_SCHED)
 //Determine if task is critical task
 int PolyTask::if_prio(int _nthread, PolyTask * it){
   return it->criticality;
@@ -215,8 +219,8 @@ int PolyTask::globalsearch_PTT(int nthread, PolyTask * it){
         leader = ptt_layout.size(); 
         break;
       }
-      //comp_perf = ptt_val;
-      comp_perf = width * ptt_val;
+      comp_perf = ptt_val;
+      //comp_perf = width * ptt_val;
       if (comp_perf < shortest_exec) {
         shortest_exec = comp_perf;
         new_width = width;
@@ -320,8 +324,9 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
 #if defined(CRIT_PERF_SCHED)
       int pr = if_prio(_nthread, (*it));
       if (pr == 1){
-        globalsearch_PTT(_nthread, (*it));
+        //globalsearch_PTT(_nthread, (*it));
         //find_thread(_nthread, (*it));
+        (*it)->leader = rand()%2;
 #ifdef DEBUG
         LOCK_ACQUIRE(output_lck);
         std::cout <<"[DEBUG] Priority=1, task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
@@ -330,14 +335,17 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
         for(int i = (*it)->leader; i < (*it)->leader + (*it)->width; i++){
           LOCK_ACQUIRE(worker_assembly_lock[i]);
           worker_assembly_q[i].push_back((*it));
+#ifdef NUMTASKS
+            num_task[(*it)->width * gotao_nthreads + i]++;
+#endif
         }
         for(int i = (*it)->leader; i < (*it)->leader + (*it)->width; i++){
           LOCK_RELEASE(worker_assembly_lock[i]);
         }        
       }
       else{    
-        history_mold(_nthread,(*it));
-        //(*it)->leader = _nthread;
+        //history_mold(_nthread,(*it));
+        (*it)->leader = _nthread;
 #ifdef DEBUG
         LOCK_ACQUIRE(output_lck);
         std::cout <<"[DEBUG] Priority=0, task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
@@ -355,20 +363,27 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
 #endif
                 
 #else
-      if(!ret && (((*it)->affinity_queue == -1) || (((*it)->affinity_queue/(*it)->width) == (_nthread/(*it)->width)))){
-        //history_mold(_nthread,(*it));
-        ret = *it; // forward locally only if affinity matches
-#ifdef DEBUG
-        LOCK_ACQUIRE(output_lck);
-        std::cout <<"[DEBUG] Task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
-        LOCK_RELEASE(output_lck);
-#endif
-      }
-      else{
-        // otherwise insert into affinity queue, or in local queue
-        int ndx = (*it)->affinity_queue;
-        if((ndx == -1) || (((*it)->affinity_queue/(*it)->width) == (_nthread/(*it)->width)))
-          ndx = _nthread;
+//         if(!ret && (((*it)->affinity_queue == -1) || (((*it)->affinity_queue/(*it)->width) == (_nthread/(*it)->width)))){
+//           //history_mold(_nthread,(*it));
+//           ret = *it; // forward locally only if affinity matches
+// #ifdef DEBUG
+//         LOCK_ACQUIRE(output_lck);
+//         std::cout <<"[DEBUG] Task "<< (*it)->taskid <<" will run on thread "<< (*it)->leader << ", width become " << (*it)->width << std::endl;
+//         LOCK_RELEASE(output_lck);
+// #endif
+//         for(int i = (*it)->leader; i < (*it)->leader + (*it)->width; i++){
+//           LOCK_ACQUIRE(worker_assembly_lock[i]);
+//           worker_assembly_q[i].push_back((*it));
+//         }
+//         for(int i = (*it)->leader; i < (*it)->leader + (*it)->width; i++){
+//           LOCK_RELEASE(worker_assembly_lock[i]);
+//         }
+      // }
+      // else{
+//         // otherwise insert into affinity queue, or in local queue
+//         int ndx = (*it)->affinity_queue;
+//         if((ndx == -1) || (((*it)->affinity_queue/(*it)->width) == (_nthread/(*it)->width)))
+//           ndx = _nthread;
 
         //history_mold(_nthread,(*it)); 
         
@@ -376,9 +391,13 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
         // This is suboptimal, but given that TAO_STA makes the allocation
         // somewhat random it simpifies the implementation. In the case that
         // TAO_STA is not defined, we could optimize it, but is it worth?
-        LOCK_ACQUIRE(worker_lock[ndx]);
-        worker_ready_q[ndx].push_front(*it);
-        LOCK_RELEASE(worker_lock[ndx]);
+        // LOCK_ACQUIRE(worker_lock[ndx]);
+        // worker_ready_q[ndx].push_front(*it);
+        // LOCK_RELEASE(worker_lock[ndx]);
+
+        LOCK_ACQUIRE(worker_lock[_nthread]);
+        worker_ready_q[_nthread].push_front(*it);
+        LOCK_RELEASE(worker_lock[_nthread]);
       } 
 #endif
     }
