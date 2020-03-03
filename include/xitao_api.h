@@ -30,8 +30,9 @@ void set_xitao_mask(cpu_set_t& user_affinity_setup);
   \param nthr The number of XiTAO threads 
   \param thrb The logical thread id offset from the physical core mapping
   \param nhwc The number of hardware contexts
+  \param suppress_warnings flag to suppress intialization warnings
 */  
-void gotao_init_hw(int nthr, int thrb, int nhwc);
+void gotao_init_hw(int nthr, int thrb, int nhwc, bool suppress_warnings);
 //! Initialize the XiTAO Runtime using the environment variables XITAO_MAXTHREADS, GOTAO_THREAD_BASE and GOTAO_HW_CONTEXTS respectively
 void gotao_init();
 #define goTAO_start gotao_start

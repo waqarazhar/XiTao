@@ -40,8 +40,9 @@ void set_xitao_mask(cpu_set_t& user_affinity_setup) {
   \param thrb is the logical thread id offset from the physical core mapping
   \param nhwc is the number of hardware contexts
 */ 
-void gotao_init_hw( int nthr, int thrb, int nhwc)
+void gotao_init_hw( int nthr, int thrb, int nhwc, bool suppress_warnings = false)
 {  
+  if(!suppress_init_warnings) suppress_init_warnings = suppress_warnings;
   if(gotao_initialized) {
     for(int i = 0; i < XITAO_MAXTHREADS; ++i) {
       inclusive_partitions[i].clear();
