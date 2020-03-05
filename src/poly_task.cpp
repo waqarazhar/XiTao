@@ -401,7 +401,8 @@ PolyTask * PolyTask::commit_and_wakeup(int _nthread){
       } 
 #endif
     }
+    task_completions[_nthread].tasks++;
+    return ret;
   }
-  task_completions[_nthread].tasks++;
-  return ret;
-}       
+ 
+//};       
