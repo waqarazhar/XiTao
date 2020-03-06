@@ -22,8 +22,7 @@ include ../../makefile.sched
 CFLAGS += -I.. -I. -O3 ${EXTRAEINC}
 CXXFLAGS +=$(CFLAGS) -std=c++11 ${EXTRAEINC}
 
-include makefile.heat
-CXX=mpicxx
+include makefile.heat.mpi
 #CC=gcc
 LIBS = -lm -L../../lib/ -lxitao -pthread ${EXTRAELIBS}
 HEAT_TAO_OBJS=heat-tao.o misc.o
@@ -45,7 +44,7 @@ LOI_DIR = ../loi
 endif
 
 CXXFLAGS += -I../../include
-all: heat-tao heat-tao-mpi
+all: heat-tao-mpi
 
 %.o : %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS)  $(LOIFLAGS) --std=gnu11 -c $< -o $@
@@ -68,3 +67,5 @@ heat: heat.o solver.o misc.o
 clean:
 	rm -rf $(HEAT_TAO_OBJS) $(HEAT_TBB_OBJS) $(HEAT_TAO_MPI_OBJS) heat-tao heat-tao-mpi heat-tbb *.ppm heat
 
+run: 
+	GOTAO_NTHREADS=2 mpirun -n 4 ./heat-tao-mpi small.dat

@@ -8,7 +8,19 @@ enum gotao_schedule_2D{
            gotao_sched_2D_static, 
            gotao_sched_2D_dynamic,
 };
-
+#if USE_MPI
+enum ste_direction{
+           UP = 0, 
+           DOWN,
+           LEFT, 
+           RIGHT
+};
+struct mpi_boundary_pair
+{
+  int source; 
+  int destination;
+};
+#endif
 #define MAX_PARFOR_SIZE 64
 
 #define PARFOR2D_IDLE 0

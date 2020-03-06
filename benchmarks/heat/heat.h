@@ -3,14 +3,20 @@
  *
  * Global definitions for the iterative solver
  */
-
+#ifndef HEAT_H
+#define HEAT_H
 #pragma once
+#if USE_MPI
+#include <mpi.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+    
 
 #include <stdio.h>
+  
 
 // configuration
 
@@ -38,7 +44,10 @@ typedef struct
     double *ftmp;
 
     unsigned   numsrcs;     // number of heat sources
-    heatsrc_t *heatsrcs;
+    heatsrc_t *heatsrcs;    
+#if USE_MPI    
+    MPI_Comm cartesian_topo_mpi_comm;    
+#endif    
 }
 algoparam_t;
 
@@ -68,4 +77,5 @@ double relax_jacobi(unsigned sizey,  double (*u)[sizey], double (*utmp)[sizey],
 */
 #ifdef __cplusplus
 }
+#endif
 #endif

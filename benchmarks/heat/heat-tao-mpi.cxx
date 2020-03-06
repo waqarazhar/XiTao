@@ -11,8 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <mpi.h>
-
+//#include "heat.h"
 
 using namespace xitao;
 
@@ -58,7 +57,13 @@ int main( int argc, char *argv[] )
     const char *resfilename;
     int awidth, exdecomp, eydecomp, ixdecomp, iydecomp;
     int mpisize, mpirank;
-    MPI_Init(&argc, &argv); 
+    int required = MPI_THREAD_MULTIPLE;
+    int provided = 0;
+    MPI_Init_thread(NULL,NULL,required,&provided);
+    if(provided!=required) {
+      std::cout << "Error: MPI thread support insufficient! required " << required << " provided " << provided;
+      abort();
+    }
     MPI_Comm_rank(MPI_COMM_WORLD, &mpirank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpisize);
 
@@ -134,6 +139,37 @@ int main( int argc, char *argv[] )
     if(mpirank == 0)
       fprintf(stdout, "Dimension size per process: %i\n", np);
     
+    
+    // find the biggest mesh dimensions  
+    int multiple = 1;
+    for(int i = 2; i * i <= mpisize; ++i) {
+      if((mpisize % i) == 0) multiple = i;
+    }
+    
+    int dim1 = multiple;
+    int dim2 = mpisize / multiple;
+    if(mpirank == 0) {
+      fprintf(stdout, "Creating MPI Cartesian Topology with DIMS [%i,%i]\n",dim1, dim2);
+    }
+    int ndims = 2; // 2-D topology
+    int dims[2];
+    int periods[2];
+    dims[0] = dim1; // numrows = 1
+    dims[1] = dim2; // numcols = size
+    periods[0] = 0; // no wraparound on rows
+    periods[1] = 0; // no wraparound on cols    
+    MPI_Cart_create(MPI_COMM_WORLD, ndims, dims, periods, 0, &param.cartesian_topo_mpi_comm);
+    
+    int coord[2];
+    MPI_Cart_coords(param.cartesian_topo_mpi_comm, mpirank, 2, coord);
+    fprintf(stdout, "Coordinates for MPI rank %i are [%i,%i]\n",mpirank, coord[0], coord[1]);
+    mpi_boundary_pair* _source_dist_pairs = new mpi_boundary_pair[4];
+    int mpi_rank_cart;
+    MPI_Comm_rank(param.cartesian_topo_mpi_comm, &mpi_rank_cart);  
+    MPI_Cart_shift(param.cartesian_topo_mpi_comm, 0, -1 , &_source_dist_pairs[UP].source, &_source_dist_pairs[UP].destination);
+    MPI_Cart_shift(param.cartesian_topo_mpi_comm, 0,  1 , &_source_dist_pairs[DOWN].source, &_source_dist_pairs[DOWN].destination);
+    MPI_Cart_shift(param.cartesian_topo_mpi_comm, 1, -1 , &_source_dist_pairs[LEFT].source, &_source_dist_pairs[LEFT].destination);
+    MPI_Cart_shift(param.cartesian_topo_mpi_comm, 1,  1 , &_source_dist_pairs[RIGHT].source, &_source_dist_pairs[RIGHT].destination);
     // now we generate the whole DAG
     // There is no indeterminism here, so we can do that in full here
     // But need to take care with memory size. The number of elements and pointers
@@ -141,8 +177,6 @@ int main( int argc, char *argv[] )
     // the decomposition. For 1000 iterations this means 16000 or 64000 items.
    
     // define some default values
-
-    //copyback cpb[param.maxiter][X_DECOMP][Y_DECOMP];
 
     if(getenv("AWIDTH")) 
 	awidth = atoi(getenv("AWIDTH"));
@@ -183,6 +217,7 @@ int main( int argc, char *argv[] )
     copy2D   *cpb[param.maxiter][exdecomp][eydecomp];
     copy2D   *init1[exdecomp][eydecomp];  // param->u
     copy2D   *init2[exdecomp][eydecomp];  // param->uhelp
+    boundary_comm_tao* comm_tao[param.maxiter];
 
     // when specifying chunk sizes and offsets I use "ceil"-style division [a/b -> (a + b -1)/b] to 
     // avoid generating minichunks when the division (a/b) generates a remainder
@@ -252,7 +287,7 @@ int main( int argc, char *argv[] )
        }
     // when not using NUMA allocation, we do not need to run any of this code since both u and uhelp are already initialized
 #endif
-
+    comm_tao[iter] = new boundary_comm_tao(param.cartesian_topo_mpi_comm, mpi_rank_cart, np , np, param.u, _source_dist_pairs);
     // create initial stencils (prologue)
     for(int x = 0; x < exdecomp; x++)
        for(int y = 0; y < eydecomp; y++) 
@@ -268,7 +303,7 @@ int main( int argc, char *argv[] )
                              gotao_sched_2D_static,
                              ceildiv(np, ixdecomp*exdecomp), // (np + ixdecomp*exdecomp -1) / (ixdecomp*exdecomp),
                              ceildiv(np, iydecomp*eydecomp), //(np + iydecomp*eydecomp -1) / (iydecomp*eydecomp), 
-                             awidth);
+                             awidth, comm_tao[iter]->boundary_recv_data);
 
 #ifdef NUMA_ALLOC
           stc[iter][x][y]->clone_sta(init2[x][y]);
@@ -288,19 +323,19 @@ int main( int argc, char *argv[] )
 #endif  // NUMA_ALLOC
 
 
-       }
+       }    
 
     // from this point just creat "iter" copies of the loop
     while(iter < param.maxiter-1)
     {
-
+    
     // create copies
     for(int x = 0; x < exdecomp; x++)
        for(int y = 0; y < eydecomp; y++) 
        {
           cpb[iter][x][y] = new copy2D(
                              param.uhelp, 
-                             param.u,
+                             param.u, 
                              np, np,
                              x*ceildiv(np, exdecomp), 
                              y*ceildiv(np, eydecomp), 
@@ -321,11 +356,11 @@ int main( int argc, char *argv[] )
           if((x+1)<exdecomp) stc[iter][x+1][y]->make_edge(cpb[iter][x][y]);
           if((y-1)>=0)       stc[iter][x][y-1]->make_edge(cpb[iter][x][y]);
           if((y+1)<eydecomp) stc[iter][x][y+1]->make_edge(cpb[iter][x][y]);
-
+          cpb[iter][x][y]->make_edge(comm_tao[iter]); 
        }
 
     iter++;
-
+    comm_tao[iter] = new boundary_comm_tao(param.cartesian_topo_mpi_comm, mpi_rank_cart, np , np, param.u, _source_dist_pairs);
     for(int x = 0; x < exdecomp; x++)
        for(int y = 0; y < eydecomp; y++) 
        {
@@ -340,10 +375,10 @@ int main( int argc, char *argv[] )
                              gotao_sched_2D_static,
                              ceildiv(np, ixdecomp*exdecomp), // (np + ixdecomp*exdecomp -1) / (ixdecomp*exdecomp),
                              ceildiv(np, iydecomp*eydecomp), //(np + iydecomp*eydecomp -1) / (iydecomp*eydecomp), 
-                             awidth);
+                             awidth, comm_tao[iter-1]->boundary_recv_data);
 
           cpb[iter-1][x][y]->make_edge(stc[iter][x][y]);
-          stc[iter][x][y]->clone_sta(cpb[iter-1][x][y]);
+          stc[iter][x][y]->clone_sta(cpb[iter-1][x][y]);        
           cpb[iter-1][x][y]->criticality = 0; 
           stc[iter][x][y]->criticality = 0; 
 
@@ -351,6 +386,7 @@ int main( int argc, char *argv[] )
           if((x+1)<exdecomp) cpb[iter-1][x+1][y]->make_edge(stc[iter][x][y]);
           if((y-1)>=0)       cpb[iter-1][x][y-1]->make_edge(stc[iter][x][y]);
           if((y+1)<eydecomp) cpb[iter-1][x][y+1]->make_edge(stc[iter][x][y]);
+          comm_tao[iter-1]->make_edge(stc[iter][x][y]); // overlap compuation with communication
        }
     }
 
@@ -380,6 +416,7 @@ int main( int argc, char *argv[] )
           if((x+1)<exdecomp) stc[iter][x+1][y]->make_edge(cpb[iter][x][y]);
           if((y-1)>=0)       stc[iter][x][y-1]->make_edge(cpb[iter][x][y]);
           if((y+1)<eydecomp) stc[iter][x][y+1]->make_edge(cpb[iter][x][y]);
+          cpb[iter][x][y]->make_edge(comm_tao[iter]); 
 
        }
 
@@ -481,10 +518,8 @@ int main( int argc, char *argv[] )
 #if defined(CRIT_PERF_SCHED)  
   copy2D::print_ptt(copy2D::time_table, "copy2D");
   jacobi2D::print_ptt(jacobi2D::time_table, "jacobi2D");
-#endif
-
-    finalize( &param );
+#endif    
     MPI_Finalize();
-    
+    finalize( &param );
     return 0;
 }
